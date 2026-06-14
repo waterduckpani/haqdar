@@ -5,8 +5,18 @@ Exposes POST /transcribe: accepts an audio file, returns English transcript.
 
 import logging
 import os
+import sys
 import tempfile
 from contextlib import asynccontextmanager
+
+# On Windows, register pip-installed NVIDIA DLLs (cuBLAS, cuDNN) so faster-whisper can load them.
+if sys.platform == "win32":
+    import site
+    for pkg in ("nvidia\\cublas\\bin", "nvidia\\cudnn\\bin"):
+        for site_dir in site.getsitepackages():
+            dll_dir = os.path.join(site_dir, pkg)
+            if os.path.isdir(dll_dir):
+                os.add_dll_directory(dll_dir)
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from faster_whisper import WhisperModel
