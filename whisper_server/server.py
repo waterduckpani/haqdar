@@ -15,9 +15,10 @@ if sys.platform == "win32":
     for mod_name in ("nvidia.cublas", "nvidia.cudnn"):
         try:
             mod = importlib.import_module(mod_name)
-            dll_dir = os.path.join(os.path.dirname(mod.__file__), "bin")
-            if os.path.isdir(dll_dir):
-                os.add_dll_directory(dll_dir)
+            for base in list(mod.__path__):
+                dll_dir = os.path.join(base, "bin")
+                if os.path.isdir(dll_dir):
+                    os.add_dll_directory(dll_dir)
         except ImportError:
             pass
 
