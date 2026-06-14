@@ -1,0 +1,1 @@
+# See bot/requirements.txt and whisper_server/requirements.txt
