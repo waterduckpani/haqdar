@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 # On Windows, register pip-installed NVIDIA DLLs (cuBLAS, cuDNN) so faster-whisper can load them.
 if sys.platform == "win32":
     import importlib
-    for mod_name in ("nvidia.cublas", "nvidia.cudnn"):
+    for mod_name in ("nvidia.cuda_runtime", "nvidia.cublas", "nvidia.cudnn"):
         try:
             mod = importlib.import_module(mod_name)
             for base in list(mod.__path__):
