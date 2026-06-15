@@ -26,10 +26,6 @@ logger = logging.getLogger(__name__)
 # Only these likelihood levels are shown, in this order.
 DISPLAY_LEVELS = ["likely eligible", "possibly eligible"]
 LEVEL_DOT = {"likely eligible": "✅", "possibly eligible": "🟡"}
-LEVEL_HEADING = {
-    "likely eligible": "✅ <b>Likely eligible</b>",
-    "possibly eligible": "🟡 <b>Possibly eligible</b>",
-}
 
 # chat_id -> {"family_name", "items": [...], "total_checked", "plain_text"}
 _REPORTS: dict[int, dict] = {}
@@ -100,19 +96,16 @@ def _overview_text(chat_id) -> str:
     report = _REPORTS[chat_id]
     items = report["items"]
 
+    # The scheme names live ONLY on the inline keyboard buttons below (grouped likely
+    # first, then possibly). The message body is just header + legend + footer, so we
+    # never repeat the names as text.
     lines = [
         f"<b>Eligibility report — {_esc(report['family_name'])}</b>",
         "Review these with the family. Tap a scheme for details.",
+        "",
+        "✅ Likely eligible — meets the main criteria",
+        "🟡 Possibly eligible — check the noted detail",
     ]
-
-    for level in DISPLAY_LEVELS:
-        group = [it for it in items if it["likelihood"] == level]
-        if not group:
-            continue
-        lines.append("")
-        lines.append(LEVEL_HEADING[level])
-        for it in group:
-            lines.append(f"• {_esc(it['scheme_name'])}")
 
     if not items:
         lines.append("")

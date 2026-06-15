@@ -17,8 +17,9 @@ CHECKLIST_MESSAGE = (
     "2) monthly household income\n"
     "3) number of people in the family\n"
     "4) number of children and each child's age\n"
-    "5) occupation — say the SPECIFIC work (e.g. carpenter, potter, mason, "
-    "daily-wage laborer), not just \"labour\"\n"
+    "5) who is the main earner in the family and what work do they do — name the "
+    "relation (e.g. husband, son, self) and the SPECIFIC work (e.g. carpenter, "
+    "potter, mason, daily-wage laborer), not just \"labour\"\n"
     "6) caste category (General/OBC/SC/ST)\n"
     "7) type of house (kutcha/pucca/homeless)\n"
     "8) do they own land\n"
@@ -44,6 +45,8 @@ PROFILE_FIELDS = [
     "children",
     "occupation",
     "occupation_detail",
+    "primary_earner_occupation",
+    "primary_earner_relation",
     "caste",
     "housing",
     "land_owned",
@@ -92,7 +95,9 @@ FIELD_LABELS = {
     "family_size": "Family size",
     "children": "Children (ages)",
     "occupation": "Occupation",
-    "occupation_detail": "Specific occupation/trade",
+    "occupation_detail": "Specific occupation/trade (of the main earner)",
+    "primary_earner_occupation": "Main earner's work",
+    "primary_earner_relation": "Main earner (relation to respondent)",
     "caste": "Caste category",
     "housing": "Type of house",
     "land_owned": "Owns land",
@@ -146,10 +151,20 @@ Every profile value you fill MUST be traceable to an answer in qa_pairs.
 - children: array of integers — the age in years of each child under 18, e.g. [4, 9, 13].
   Use [] ONLY if the family clearly states they have no children under 18. Use null if not stated.
 - occupation: string (a short general description of the household's work)
-- occupation_detail: string — the SPECIFIC trade or job in the family's own words, e.g.
-  "carpenter", "potter", "blacksmith", "cobbler", "mason", "daily-wage laborer". Do NOT
-  collapse a skilled or artisan trade into a generic word like "laborer" or "worker": if a
-  specific trade is stated, keep it here verbatim. null if no specific trade is stated.
+- occupation_detail: string — the SPECIFIC trade or job of the family's MAIN EARNER, in the
+  family's own words, e.g. "carpenter", "potter", "blacksmith", "cobbler", "mason",
+  "daily-wage laborer". This describes the main earner's work, NOT necessarily the
+  respondent's. Do NOT collapse a skilled or artisan trade into a generic word like "laborer"
+  or "worker": if a specific trade is stated, keep it here verbatim. null if no specific trade
+  is stated.
+- primary_earner_occupation: string — the work done by the family's MAIN EARNER (the person
+  whose income mainly supports the household). This is OFTEN NOT the respondent: the person
+  recording/answering may be the wife while the main earner is the husband, or a parent while
+  the earner is a son. Capture the earner's actual work here even when the respondent does
+  something else (or nothing). null if not stated.
+- primary_earner_relation: string — WHO the main earner is, given as their relationship to
+  the respondent in the respondent's own words, e.g. "self" (the respondent is the main
+  earner), "husband", "wife", "son", "daughter", "father", "brother". null if not stated.
 - caste: "General" | "OBC" | "SC" | "ST"
 - housing: "kutcha" | "pucca" | "homeless" | "landless"
 - land_owned: boolean
@@ -177,8 +192,9 @@ Rules:
   Required fields are: name, age, monthly_income, family_size, occupation, caste, housing,
   land_owned, ration_card, disability. (state and area are collected separately by the
   worker — do NOT ask about them in followup_questions.) The additional fields (children,
-  occupation_detail, pregnant_or_lactating, has_electricity, has_lpg, has_bank_account) are
-  NOT required, so do not list them in missing_fields; still capture them whenever stated.
+  occupation_detail, primary_earner_occupation, primary_earner_relation,
+  pregnant_or_lactating, has_electricity, has_lpg, has_bank_account) are NOT required, so do
+  not list them in missing_fields; still capture them whenever stated.
 - "followup_questions": array of at most 3 short plain-English questions targeting the most
   important missing_fields. Use an empty array if nothing required is missing.
 """
@@ -215,7 +231,8 @@ def build_initial_user_prompt(transcript: str) -> str:
           "profile": {
             "name": "Sita", "age": 38, "gender": "female", "state": null, "area": null,
             "monthly_income": 8000, "family_size": 5, "children": null, "occupation": null,
-            "occupation_detail": null, "caste": null, "housing": null, "land_owned": null,
+            "occupation_detail": null, "primary_earner_occupation": null,
+            "primary_earner_relation": null, "caste": null, "housing": null, "land_owned": null,
             "ration_card": null, "disability": null, "adult_male_earner_16_59": null,
             "pregnant_or_lactating": null, "has_electricity": null, "has_lpg": null,
             "has_bank_account": null
@@ -293,8 +310,24 @@ LIKELIHOOD DEFINITIONS (apply strictly):
 
 HOW TO COMPARE:
 - Go field by field: income, age, gender, caste, area (rural/urban), occupation +
-  occupation_detail, housing, land ownership, ration_card, disability, children ages,
-  pregnant_or_lactating, has_electricity, has_lpg, has_bank_account, and any other_flags.
+  occupation_detail, primary_earner_occupation + primary_earner_relation, housing, land
+  ownership, ration_card, disability, children ages, pregnant_or_lactating, has_electricity,
+  has_lpg, has_bank_account, and any other_flags.
+
+WHO HOLDS THE OCCUPATION (read carefully):
+- The profile separates the RESPONDENT (the person interviewed) from the family's MAIN
+  EARNER. primary_earner_relation says who the earner is relative to the respondent (e.g.
+  "self", "husband", "son"); primary_earner_occupation and occupation_detail describe the
+  EARNER's work, which is often NOT the respondent's.
+- For occupation-based schemes — PM Vishwakarma, PM SVANidhi, PM-SYM, PM Mudra, Stand-Up
+  India, and any other scheme that turns on what work a person does — judge eligibility
+  against the MAIN EARNER's work (primary_earner_occupation / occupation_detail), NOT the
+  respondent's. The earner is the household member who would actually enrol.
+- Word the "reasoning" so it attributes the trade to the correct person. If
+  primary_earner_relation is "husband" and the husband is a carpenter, write e.g. "the
+  husband is a carpenter, so PM Vishwakarma applies to him" — do NOT imply the respondent
+  holds that job. If primary_earner_relation is "self" (or null with no other earner named),
+  the respondent is the earner and you may speak in the normal way.
 - INCOME: the profile's monthly_income is MONTHLY. A scheme's income_max_annual is ANNUAL.
   Multiply the profile income by 12 before comparing.
 - AGE: check age (and children ages) against age_min / age_max when present.
@@ -306,15 +339,17 @@ HARD EXCLUSIONS — apply these as "not eligible" even if other fields look fine
   "homeless", or "landless", and exclude has_electricity == false.
 - Artisan/skilled-trade schemes (e.g. PM Vishwakarma): require ONE of the recognised
   traditional artisan trades (carpenter, blacksmith, potter, cobbler, mason, tailor,
-  goldsmith, boat-maker, etc.). Judge from occupation_detail. A generic "laborer" / "daily
-  wage worker" with no specific trade is NOT eligible.
+  goldsmith, boat-maker, etc.). Judge from the MAIN EARNER's work (primary_earner_occupation
+  / occupation_detail) and attribute it to that earner in the reasoning. A generic "laborer" /
+  "daily wage worker" with no specific trade is NOT eligible.
 - Scholarship schemes (e.g. NMMSS and other student scholarships): require a child in the
   scheme's class/age range. Check the children ages. If there are no children, or none fall
   in range, mark "not eligible". If children is null, it is "possibly eligible" (missing_info:
   children).
 - Business-loan schemes (e.g. Mudra, Stand-Up India): require an actual or clearly intended
-  business/enterprise. If nothing in the profile indicates a business or self-employment,
-  mark "not eligible".
+  business/enterprise. Judge from the MAIN EARNER's work (primary_earner_occupation /
+  occupation_detail) and attribute it to that earner in the reasoning. If nothing in the
+  profile indicates a business or self-employment, mark "not eligible".
 
 USE THE NEWER FIELDS:
 - pregnant_or_lactating: gate maternity schemes (e.g. JSY, PMMVY) on this — false/none means
@@ -326,6 +361,8 @@ USE THE NEWER FIELDS:
 - has_bank_account: insurance/pension/DBT schemes realistically need a bank account; if
   false, note it (these schemes usually require opening one) rather than auto-passing.
 - adult presence (e.g. an adult aged 18-40) for pension/insurance schemes like APY / PM-SYM.
+  PM-SYM specifically covers unorganised-sector WORKERS, so judge it against the main earner's
+  work and attribute it to that earner in the reasoning.
 
 OUTPUT RULES:
 - When a needed field is null, do NOT assume it passes. Use "possibly eligible" and name the
