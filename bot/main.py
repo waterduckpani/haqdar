@@ -29,7 +29,7 @@ from telegram.ext import (
 )
 
 import db
-import matching
+import profile_ui
 import prompts
 import report_ui
 from llm import extract_profile
@@ -46,10 +46,6 @@ WHISPER_SERVER_URL = os.environ["WHISPER_SERVER_URL"]
 
 # Stop asking after this many follow-up rounds and proceed with whatever we have.
 MAX_FOLLOWUP_ROUNDS = 2
-
-# Hard cap on the scheme-matching LLM call (incl. its one retry) so the worker is never
-# left hanging on "Checking welfare schemes…".
-MATCHING_TIMEOUT = 75
 
 # Meta key stashed inside partial_profile to count completed follow-up rounds. Stripped
 # before the profile is saved or shown. (Keeps the sessions schema to the requested columns.)
@@ -108,22 +104,6 @@ def missing_required(profile: dict) -> list[str]:
     return [field for field in prompts.REQUIRED_FIELDS if profile.get(field) is None]
 
 
-def format_profile_summary(profile: dict) -> str:
-    """Render a clean, human-readable summary of the profile for the worker."""
-    def fmt(field: str):
-        value = profile.get(field)
-        if value is None:
-            return "—"
-        if isinstance(value, bool):
-            return "Yes" if value else "No"
-        return str(value)
-
-    lines = ["✅ *Profile captured*", ""]
-    for field in prompts.PROFILE_FIELDS:
-        lines.append(f"• *{prompts.FIELD_LABELS[field]}:* {fmt(field)}")
-    return "\n".join(lines)
-
-
 def format_followups(questions: list[str], missing: list[str]) -> str:
     """Build the follow-up message, falling back to generic prompts from missing fields."""
     questions = [q for q in (questions or []) if q][:3]
@@ -142,52 +122,6 @@ def format_followups(questions: list[str], missing: list[str]) -> str:
 # State-machine steps
 # ---------------------------------------------------------------------------
 
-async def finalize(update: Update, chat_id: int, profile: dict) -> None:
-    """Store the profile, show the summary, run scheme matching, then return to idle."""
-    clean = {field: profile.get(field) for field in prompts.PROFILE_FIELDS}
-    await asyncio.to_thread(db.update_session, chat_id, state=db.STATE_COMPLETE, partial_profile=clean)
-    await asyncio.to_thread(db.save_profile, chat_id, clean)
-    await update.message.reply_text(format_profile_summary(clean), parse_mode="Markdown")
-
-    # Scheme matching
-    try:
-        await update.message.reply_text("Checking welfare schemes for this family… 🧭")
-        schemes = await asyncio.to_thread(matching.load_schemes)
-        schemes = matching.select_schemes(clean, schemes)
-
-        logger.info("Matching %d schemes (chat %s)…", len(schemes), chat_id)
-        # Cap the LLM call (plus its one retry) so a slow/hung response can't freeze the flow.
-        match_data = await asyncio.wait_for(
-            matching.match_schemes(clean, schemes), timeout=MATCHING_TIMEOUT
-        )
-        logger.info(
-            "Scheme matches (chat %s): %d returned", chat_id, len(match_data.get("matches", []))
-        )
-
-        plain_text = matching.format_match_report(match_data, schemes)
-        family_name = clean.get("name") or "this family"
-        text, markup = report_ui.build_report(chat_id, match_data, schemes, family_name, plain_text)
-
-        logger.info("Sending eligibility report (chat %s)", chat_id)
-        await update.message.reply_text(
-            text, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True
-        )
-    except asyncio.TimeoutError:
-        logger.error("Scheme matching timed out after %ss (chat %s)", MATCHING_TIMEOUT, chat_id)
-        await update.message.reply_text(
-            "Scheme matching is taking too long right now. The profile is saved — "
-            "please run it again shortly."
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Scheme matching failed: %s", exc, exc_info=True)
-        await update.message.reply_text(
-            "I captured the profile, but matching schemes failed just now. "
-            "The profile is saved — please try again shortly."
-        )
-    finally:
-        await asyncio.to_thread(db.update_session, chat_id, state=db.STATE_IDLE)
-
-
 async def advance_after_extraction(
     update: Update,
     chat_id: int,
@@ -195,7 +129,12 @@ async def advance_after_extraction(
     llm_data: dict,
     rounds_done: int,
 ) -> None:
-    """Given a merged profile, either ask follow-ups or finalize."""
+    """Given a merged profile, either ask follow-ups or move to verification.
+
+    Matching no longer runs automatically here — once the required fields are in (or
+    the follow-up rounds are spent) we hand off to the interactive verification card,
+    and matching only happens when the worker taps "Generate eligibility report".
+    """
     missing = missing_required(profile)
 
     if missing and rounds_done < MAX_FOLLOWUP_ROUNDS:
@@ -211,7 +150,7 @@ async def advance_after_extraction(
             format_followups(llm_data.get("followup_questions"), missing)
         )
     else:
-        await finalize(update, chat_id, profile)
+        await profile_ui.start_verification(update, chat_id, profile)
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +191,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Please type *rural* or *urban* first.", parse_mode="Markdown")
     elif state == db.STATE_PROCESSING:
         await update.message.reply_text("Still processing your previous recording — one moment ⏳")
+    elif state == db.STATE_EDITING_FIELD:
+        await update.message.reply_text("Please *type* the corrected value as text.", parse_mode="Markdown")
+    elif state in (db.STATE_VERIFYING, db.STATE_REPORT_READY):
+        await update.message.reply_text("Please use the buttons on the profile above. ⬆️")
     else:
         # No active intake: behave like the old transcribe-only bot, with a hint.
         try:
@@ -283,6 +226,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _collect_area(update, chat_id, session, text)
     elif state == db.STATE_AWAITING_FOLLOWUP:
         await _process_followup(update, context, chat_id, session, is_voice=False, text=text)
+    elif state == db.STATE_EDITING_FIELD:
+        await profile_ui.apply_edit(update, context, chat_id, session, text)
     elif state == db.STATE_AWAITING_RECORDING:
         await update.message.reply_text(
             "Please send a *voice note* recording the family's answers to the checklist.",
@@ -290,6 +235,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
     elif state == db.STATE_PROCESSING:
         await update.message.reply_text("Still processing — one moment ⏳")
+    elif state == db.STATE_VERIFYING:
+        await update.message.reply_text("Tap a field above to edit it, or ✅ Generate eligibility report.")
+    elif state == db.STATE_REPORT_READY:
+        await update.message.reply_text("Tap 📋 Show eligibility report above to see the matches.")
     else:
         await update.message.reply_text("Send *initiate* to start an intake.", parse_mode="Markdown")
 
@@ -403,7 +352,9 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("initiate", initiate))
-    app.add_handler(CallbackQueryHandler(report_ui.handle_callback))
+    # Verification / generate / show buttons ("pf:*") vs. the scheme-report buttons.
+    app.add_handler(CallbackQueryHandler(profile_ui.handle_callback, pattern=r"^pf:"))
+    app.add_handler(CallbackQueryHandler(report_ui.handle_callback, pattern=r"^(s:|back|full)"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_error_handler(on_error)

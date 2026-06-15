@@ -55,11 +55,11 @@ India runs hundreds of welfare schemes, but the families who qualify are often t
 Each worker moves through a persisted state machine:
 
 ```
-idle → awaiting_state → awaiting_area → awaiting_recording
-     → processing → awaiting_followup → complete → idle
+idle → awaiting_state → awaiting_area → awaiting_recording → processing
+     → awaiting_followup → verifying ⇄ editing_field → report_ready → idle
 ```
 
-State, the partial profile, and finished profiles all live in Supabase, so an intake survives a bot restart mid-conversation.
+Matching is **never** run automatically: once the required fields are captured, the worker is shown an editable verification card and matching only runs when they tap **Generate eligibility report**. State, the partial profile, the in-progress edits, and the matching result all live in the Supabase session row, so an intake survives a bot restart mid-conversation.
 
 ---
 
@@ -70,7 +70,8 @@ State, the partial profile, and finished profiles all live in Supabase, so an in
 - ⚡ **On-device transcription** — runs locally via **MLX** on Apple Silicon (no audio leaves your machine for STT); reachable over Tailscale if the model host is separate.
 - 🧠 **Structured profile extraction** — an LLM turns free-form speech into a typed family profile (income, caste category, housing, land, ration card, disability, …).
 - 🔁 **Smart follow-ups** — if required fields are missing, the bot asks targeted questions (typed or by voice) for up to two rounds, then proceeds with what it has.
-- ✅ **Scheme matching with reasoning** — every completed profile is screened against the scheme list; results are grouped into *Likely* / *Possibly* eligible with a "why," what's left to confirm, and a source link.
+- 📝 **Verify-before-match** — the worker reviews the captured profile on an inline keyboard, taps any field to correct it (edited in place), and only then triggers matching — no wasted LLM calls on a wrong profile.
+- ✅ **Strict scheme matching with reasoning** — the matcher defaults every scheme to *not eligible* and applies hard exclusions (rooftop-solar needs a roof + power, artisan schemes need a real trade, scholarships need a child in range, business loans need a business), so results aren't swept into "possibly" to be safe. Surviving schemes are grouped into *Likely* / *Possibly* with a "why," what's left to confirm, and a source link.
 - 📱 **Interactive report** — a tappable Telegram inline-keyboard: overview → per-scheme detail → full text, all editing one message in place.
 - 🛡️ **Resilient by design** — defensive JSON parsing with retry, hard timeouts on the matching call, and graceful fallbacks so a worker is never left hanging.
 
@@ -98,6 +99,7 @@ haqdar/
 │   ├── llm.py              #   OpenRouter calls, defensive JSON parsing + retry
 │   ├── prompts.py          #   profile schema, checklist, all LLM prompts
 │   ├── matching.py         #   scheme screening + worker-facing report text
+│   ├── profile_ui.py       #   editable verify-before-match card (inline keyboard)
 │   ├── report_ui.py        #   interactive inline-keyboard report
 │   ├── db.py               #   Supabase access (sessions / profiles / schemes)
 │   └── schema.sql          #   Postgres schema
@@ -168,9 +170,11 @@ All configuration is via `.env` (see [`.env.example`](.env.example)):
 |---------------|--------------|
 | `/start` | Welcome and instructions |
 | `initiate` / `/initiate` | Begins an intake — asks for state, then rural/urban |
-| Send a voice note | Transcribes, extracts the profile, asks follow-ups or finalizes |
+| Send a voice note | Transcribes, extracts the profile, asks follow-ups or shows the verify card |
 | Reply to a follow-up | Merges the answer and continues |
-| (on completion) | Profile summary + interactive eligibility report |
+| Tap a field on the verify card | Prompts for the correct value; updates the profile in place |
+| Tap *Generate eligibility report* | Runs scheme matching and parks the result |
+| Tap *Show eligibility report* | Reveals the interactive, tappable per-scheme report |
 
 ---
 

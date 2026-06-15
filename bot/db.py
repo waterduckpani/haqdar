@@ -21,6 +21,12 @@ STATE_AWAITING_AREA = "awaiting_area"
 STATE_AWAITING_RECORDING = "awaiting_recording"
 STATE_PROCESSING = "processing"
 STATE_AWAITING_FOLLOWUP = "awaiting_followup"
+# Interactive verify-before-match flow: the worker reviews/edits the extracted
+# profile (verifying), optionally drills into one field (editing_field), then
+# triggers matching whose result is parked on the session (report_ready).
+STATE_VERIFYING = "verifying"
+STATE_EDITING_FIELD = "editing_field"
+STATE_REPORT_READY = "report_ready"
 STATE_COMPLETE = "complete"
 
 _client: Client | None = None
