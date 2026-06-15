@@ -1,29 +1,17 @@
 """
-Haqdar Whisper Server — runs on the PC with the RTX 4070 Ti Super.
+Haqdar Whisper Server — runs locally on the Mac (Apple Silicon) via MLX.
 Exposes POST /transcribe: accepts an audio file, returns English transcript.
 """
 
 import logging
 import os
-import sys
 import tempfile
 from contextlib import asynccontextmanager
 
-# On Windows, register pip-installed NVIDIA DLLs (cuBLAS, cuDNN) so faster-whisper can load them.
-if sys.platform == "win32":
-    import importlib
-    for mod_name in ("nvidia.cuda_runtime", "nvidia.cublas", "nvidia.cudnn"):
-        try:
-            mod = importlib.import_module(mod_name)
-            for base in list(mod.__path__):
-                dll_dir = os.path.join(base, "bin")
-                if os.path.isdir(dll_dir):
-                    os.add_dll_directory(dll_dir)
-        except ImportError:
-            pass
-
+import mlx_whisper
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from faster_whisper import WhisperModel
+
+MODEL_REPO = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-large-v3-mlx")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -31,14 +19,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-whisper_model: WhisperModel | None = None
+model_ready = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global whisper_model
-    logger.info("Loading Whisper large-v3 on CUDA…")
-    whisper_model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+    global model_ready
+    logger.info("Warming up MLX Whisper (%s)…", MODEL_REPO)
+    # Trigger a tiny transcription to force model download/load up front.
+    import numpy as np
+    silence = np.zeros(16000, dtype=np.float32)
+    mlx_whisper.transcribe(silence, path_or_hf_repo=MODEL_REPO)
+    model_ready = True
     logger.info("Model ready.")
     yield
 
@@ -48,7 +40,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_loaded": whisper_model is not None}
+    return {"status": "ok", "model_loaded": model_ready}
 
 
 @app.post("/transcribe")
@@ -60,16 +52,18 @@ async def transcribe(file: UploadFile = File(...)):
             tmp_path = tmp.name
             tmp.write(await file.read())
 
-        segments, info = whisper_model.transcribe(tmp_path, task="translate")
-        logger.info(
-            "Detected language: %s (probability %.2f)", info.language, info.language_probability
+        result = mlx_whisper.transcribe(
+            tmp_path,
+            path_or_hf_repo=MODEL_REPO,
+            task="translate",
         )
-        transcript = " ".join(segment.text.strip() for segment in segments)
+
+        language = result.get("language", "unknown")
+        logger.info("Detected language: %s", language)
 
         return {
-            "transcript": transcript,
-            "language": info.language,
-            "language_probability": round(info.language_probability, 4),
+            "transcript": result["text"].strip(),
+            "language": language,
         }
 
     except Exception as exc:
