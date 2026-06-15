@@ -45,14 +45,13 @@ PROFILE_FIELDS = [
     "adult_male_earner_16_59",
 ]
 
-# Fields we insist on before calling a profile "complete". The remaining fields
-# (gender, state, area, adult_male_earner_16_59) are inferred when possible but
-# never block completion.
+# Fields we insist on before calling a profile "complete". state and area are NOT here:
+# the field worker enters them by hand at the start of the intake (they're on-site and
+# already know them), so they are never asked of the family. gender and
+# adult_male_earner_16_59 are inferred when possible but never block completion.
 REQUIRED_FIELDS = [
     "name",
     "age",
-    "state",
-    "area",
     "monthly_income",
     "family_size",
     "occupation",
@@ -138,8 +137,9 @@ Rules:
 - If income is stated as annual, convert it to a monthly figure.
 - Use null for anything not stated or genuinely unclear. Do NOT invent values.
 - "missing_fields": array of field names from "profile" that are null AND required.
-  Required fields are: name, age, state, area, monthly_income, family_size, occupation,
-  caste, housing, land_owned, ration_card, disability.
+  Required fields are: name, age, monthly_income, family_size, occupation, caste, housing,
+  land_owned, ration_card, disability. (state and area are collected separately by the
+  worker — do NOT ask about them in followup_questions.)
 - "followup_questions": array of at most 3 short plain-English questions targeting the most
   important missing_fields. Use an empty array if nothing required is missing.
 """

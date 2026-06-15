@@ -216,10 +216,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def initiate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Create/reset a session and send the fixed recording checklist."""
+    """Create/reset a session and ask the worker for the family's state."""
     chat_id = update.effective_chat.id
     await asyncio.to_thread(db.start_session, chat_id)
-    await update.message.reply_text(prompts.CHECKLIST_MESSAGE)
+    await update.message.reply_text(
+        "Let's begin. 📍 Which *state* is the family in? (type it)",
+        parse_mode="Markdown",
+    )
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -229,9 +232,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     state = session["state"] if session else db.STATE_IDLE
 
     if state == db.STATE_AWAITING_RECORDING:
-        await _process_recording(update, context, chat_id)
+        await _process_recording(update, context, chat_id, session)
     elif state == db.STATE_AWAITING_FOLLOWUP:
         await _process_followup(update, context, chat_id, session, is_voice=True)
+    elif state == db.STATE_AWAITING_STATE:
+        await update.message.reply_text("Please *type* the state name first.", parse_mode="Markdown")
+    elif state == db.STATE_AWAITING_AREA:
+        await update.message.reply_text("Please type *rural* or *urban* first.", parse_mode="Markdown")
     elif state == db.STATE_PROCESSING:
         await update.message.reply_text("Still processing your previous recording — one moment ⏳")
     else:
@@ -259,7 +266,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     session = await asyncio.to_thread(db.get_session, chat_id)
     state = session["state"] if session else db.STATE_IDLE
 
-    if state == db.STATE_AWAITING_FOLLOWUP:
+    if state == db.STATE_AWAITING_STATE:
+        await _collect_state(update, chat_id, session, text)
+    elif state == db.STATE_AWAITING_AREA:
+        await _collect_area(update, chat_id, session, text)
+    elif state == db.STATE_AWAITING_FOLLOWUP:
         await _process_followup(update, context, chat_id, session, is_voice=False, text=text)
     elif state == db.STATE_AWAITING_RECORDING:
         await update.message.reply_text(
@@ -276,8 +287,43 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # State-machine internals
 # ---------------------------------------------------------------------------
 
-async def _process_recording(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+async def _collect_state(update: Update, chat_id: int, session: dict, text: str) -> None:
+    """awaiting_state: store the worker-entered state, then ask for the area."""
+    partial = dict(session.get("partial_profile") or {})
+    partial["state"] = text.strip()
+    await asyncio.to_thread(
+        db.update_session, chat_id, state=db.STATE_AWAITING_AREA, partial_profile=partial
+    )
+    await update.message.reply_text(
+        f"State set to *{partial['state']}*.\n\nIs this a *rural* or *urban* area? (type one)",
+        parse_mode="Markdown",
+    )
+
+
+async def _collect_area(update: Update, chat_id: int, session: dict, text: str) -> None:
+    """awaiting_area: store rural/urban, then send the recording checklist."""
+    value = text.strip().lower()
+    if value not in ("rural", "urban"):
+        await update.message.reply_text("Please type either *rural* or *urban*.", parse_mode="Markdown")
+        return
+
+    partial = dict(session.get("partial_profile") or {})
+    partial["area"] = value
+    await asyncio.to_thread(
+        db.update_session, chat_id, state=db.STATE_AWAITING_RECORDING, partial_profile=partial
+    )
+    await update.message.reply_text(
+        f"Area set to *{value}*. Now for the family's details.\n\n{prompts.CHECKLIST_MESSAGE}",
+        parse_mode="Markdown",
+    )
+
+
+async def _process_recording(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, session: dict
+) -> None:
     """awaiting_recording: transcribe the note, extract the profile, branch."""
+    # The worker already supplied state/area; keep them as the base of the profile.
+    base = dict(session.get("partial_profile") or {})
     await asyncio.to_thread(db.update_session, chat_id, state=db.STATE_PROCESSING)
     await update.message.reply_text("Got it — transcribing and reading the answers… 🧾")
 
@@ -286,7 +332,11 @@ async def _process_recording(update: Update, context: ContextTypes.DEFAULT_TYPE,
         logger.info("Transcript (chat %s): %s", chat_id, transcript)
         llm_data = await extract_profile(prompts.build_initial_user_prompt(transcript))
         logger.info("QA pairs (chat %s): %s", chat_id, llm_data.get("qa_pairs"))
-        profile = merge_profiles({}, llm_data.get("profile"))
+        profile = merge_profiles(base, llm_data.get("profile"))
+        # Worker-entered state/area are authoritative — never let the transcript override them.
+        for field in ("state", "area"):
+            if base.get(field) is not None:
+                profile[field] = base[field]
         await advance_after_extraction(update, chat_id, profile, llm_data, rounds_done=0)
     except Exception as exc:  # noqa: BLE001
         logger.error("Recording processing failed: %s", exc, exc_info=True)

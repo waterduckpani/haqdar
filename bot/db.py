@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 # Session states (the state machine lives in main.py; these are the canonical strings).
 STATE_IDLE = "idle"
+STATE_AWAITING_STATE = "awaiting_state"
+STATE_AWAITING_AREA = "awaiting_area"
 STATE_AWAITING_RECORDING = "awaiting_recording"
 STATE_PROCESSING = "processing"
 STATE_AWAITING_FOLLOWUP = "awaiting_followup"
@@ -50,10 +52,13 @@ def get_session(chat_id: int) -> dict | None:
 
 
 def start_session(chat_id: int) -> dict:
-    """Create or reset a session to awaiting_recording with an empty partial profile."""
+    """Create or reset a session to awaiting_state with an empty partial profile.
+
+    The worker is asked for the family's state and area (rural/urban) before recording.
+    """
     row = {
         "chat_id": chat_id,
-        "state": STATE_AWAITING_RECORDING,
+        "state": STATE_AWAITING_STATE,
         "partial_profile": {},
         "updated_at": _now(),
     }
