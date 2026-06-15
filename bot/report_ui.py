@@ -21,11 +21,21 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
+import matching
+
 logger = logging.getLogger(__name__)
 
 # Only these likelihood levels are shown, in this order.
 DISPLAY_LEVELS = ["likely eligible", "possibly eligible"]
 LEVEL_DOT = {"likely eligible": "✅", "possibly eligible": "🟡"}
+
+# Schemes are split into two groups, entitlements first (the missed benefits that matter
+# most), then voluntary enrollment schemes. Labels for the keyboard separator rows.
+CATEGORY_ORDER = matching.CATEGORY_ORDER
+CATEGORY_BUTTON_LABEL = {
+    "entitlement": "— Benefits they may be entitled to —",
+    "enrollment": "— Schemes to enroll in —",
+}
 
 # chat_id -> {"family_name", "items": [...], "total_checked", "plain_text"}
 _REPORTS: dict[int, dict] = {}
@@ -67,21 +77,26 @@ def build_report(chat_id, match_data, schemes, family_name, plain_text):
         if level in buckets:
             buckets[level].append(m)
 
+    # Order entitlements first, then enrollment; likely before possibly within each group.
     items: list[dict] = []
-    for level in DISPLAY_LEVELS:
-        for m in buckets[level]:
-            scheme = by_name.get(m.get("scheme_name"), {})
-            items.append(
-                {
-                    "scheme_name": m.get("scheme_name", "Unknown scheme"),
-                    "likelihood": level,
-                    "reasoning": (m.get("reasoning") or "").strip(),
-                    "missing_info": m.get("missing_info") or [],
-                    "source_link": m.get("source_link") or scheme.get("source_link"),
-                    "benefit": _one_line(scheme.get("benefits")),
-                    "verification_note": (scheme.get("verification_note") or "").strip(),
-                }
-            )
+    for category in CATEGORY_ORDER:
+        for level in DISPLAY_LEVELS:
+            for m in buckets[level]:
+                if matching.classify_category(m.get("scheme_name")) != category:
+                    continue
+                scheme = by_name.get(m.get("scheme_name"), {})
+                items.append(
+                    {
+                        "scheme_name": m.get("scheme_name", "Unknown scheme"),
+                        "likelihood": level,
+                        "category": category,
+                        "reasoning": (m.get("reasoning") or "").strip(),
+                        "missing_info": m.get("missing_info") or [],
+                        "source_link": m.get("source_link") or scheme.get("source_link"),
+                        "benefit": _one_line(scheme.get("benefits")),
+                        "verification_note": (scheme.get("verification_note") or "").strip(),
+                    }
+                )
 
     _REPORTS[chat_id] = {
         "family_name": family_name,
@@ -122,7 +137,15 @@ def _overview_text(chat_id) -> str:
 def _overview_markup(chat_id) -> InlineKeyboardMarkup:
     report = _REPORTS[chat_id]
     rows: list[list[InlineKeyboardButton]] = []
+    current_category = None
     for idx, it in enumerate(report["items"]):
+        category = it.get("category", "entitlement")
+        if category != current_category:
+            # A non-clickable separator row labels the group the buttons below belong to.
+            rows.append(
+                [InlineKeyboardButton(CATEGORY_BUTTON_LABEL[category], callback_data="noop")]
+            )
+            current_category = category
         label = f"{LEVEL_DOT[it['likelihood']]} {it['scheme_name']}"
         rows.append([InlineKeyboardButton(label[:60], callback_data=f"s:{idx}")])
     rows.append([InlineKeyboardButton("📄 Send full text version", callback_data="full")])
@@ -181,6 +204,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     chat_id = query.message.chat_id
     data = query.data or ""
     report = _REPORTS.get(chat_id)
+
+    if data == "noop":
+        # A group-separator row was tapped — it carries no action.
+        return
 
     if report is None:
         await query.edit_message_text("Please run the report again.")

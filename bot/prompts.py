@@ -197,6 +197,11 @@ Rules:
   not list them in missing_fields; still capture them whenever stated.
 - "followup_questions": array of at most 3 short plain-English questions targeting the most
   important missing_fields. Use an empty array if nothing required is missing.
+  PHRASING — the questions are read by the FIELD WORKER and are ABOUT a specific family
+  member, so address the worker, never the family. Refer to people by their role — "the main
+  earner", "the respondent", "the child", "the family" — and NEVER use second-person "your".
+  Write "What is the main earner's monthly income?" or "What is the respondent's gender?",
+  NOT "What is your father's income?" or "Confirm your gender".
 """
 
 STRICT_JSON_REMINDER = (
@@ -320,17 +325,27 @@ WHO HOLDS THE OCCUPATION (read carefully):
   "self", "husband", "son"); primary_earner_occupation and occupation_detail describe the
   EARNER's work, which is often NOT the respondent's.
 - For occupation-based schemes — PM Vishwakarma, PM SVANidhi, PM-SYM, PM Mudra, Stand-Up
-  India, and any other scheme that turns on what work a person does — judge eligibility
-  against the MAIN EARNER's work (primary_earner_occupation / occupation_detail), NOT the
-  respondent's. The earner is the household member who would actually enrol.
-- Word the "reasoning" so it attributes the trade to the correct person. If
-  primary_earner_relation is "husband" and the husband is a carpenter, write e.g. "the
-  husband is a carpenter, so PM Vishwakarma applies to him" — do NOT imply the respondent
-  holds that job. If primary_earner_relation is "self" (or null with no other earner named),
-  the respondent is the earner and you may speak in the normal way.
+  India, APY (where eligibility depends on the worker), and any other scheme that turns on
+  what work a person does — judge eligibility against the MAIN EARNER's work
+  (primary_earner_occupation / occupation_detail), NOT the respondent's. The earner is the
+  household member who would actually enrol.
+- Word the "reasoning" so it NAMES who in the household the scheme applies to, using
+  primary_earner_relation. If it is "father" and the father is an electrician, write e.g.
+  "the father, an electrician, is an unorganised worker, so PM-SYM applies to him" — never a
+  bare "the applicant is an electrician." If primary_earner_relation is "husband" and the
+  husband is a carpenter, write "the husband is a carpenter, so PM Vishwakarma applies to
+  him" — do NOT imply the respondent holds that job. If primary_earner_relation is "self",
+  the respondent is the earner and you may speak in the normal way. If
+  primary_earner_relation is null/unknown but the work is known, refer to the earner as "the
+  household's main earner" (e.g. "the household's main earner is a mason, so PM Vishwakarma
+  applies to that earner") — never attribute the work to "the applicant" by default.
 - INCOME: the profile's monthly_income is MONTHLY. A scheme's income_max_annual is ANNUAL.
-  Multiply the profile income by 12 before comparing.
-- AGE: check age (and children ages) against age_min / age_max when present.
+  Multiply the profile income by 12 before comparing. Income ceilings are INCLUSIVE: annual
+  income <= the cap is WITHIN the limit (income exactly at the cap qualifies); only income
+  strictly ABOVE the cap fails.
+- AGE: check age (and children ages) against age_min / age_max when present. Age limits are
+  INCLUSIVE: age >= age_min and age <= age_max both qualify (an age exactly at age_min or
+  age_max is within range).
 - A null/empty scheme criterion means that scheme does not restrict on that field.
 
 HARD EXCLUSIONS — apply these as "not eligible" even if other fields look fine:
@@ -350,6 +365,14 @@ HARD EXCLUSIONS — apply these as "not eligible" even if other fields look fine
   business/enterprise. Judge from the MAIN EARNER's work (primary_earner_occupation /
   occupation_detail) and attribute it to that earner in the reasoning. If nothing in the
   profile indicates a business or self-employment, mark "not eligible".
+
+AFFORDABILITY — capital-heavy schemes:
+- Some schemes require a large UPFRONT cost the family must pay even after the subsidy —
+  most notably rooftop solar (PM Surya Ghar). For any such scheme that is NOT already a hard
+  exclusion above: if the household's monthly_income is below ~Rs 25,000, do NOT mark it
+  "likely eligible". Cap it at "possibly eligible" and state in the reasoning that it needs
+  upfront investment the family may not be able to afford. Apply this same affordability
+  caution to any other scheme requiring a large upfront outlay.
 
 USE THE NEWER FIELDS:
 - pregnant_or_lactating: gate maternity schemes (e.g. JSY, PMMVY) on this — false/none means

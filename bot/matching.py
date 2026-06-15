@@ -23,6 +23,34 @@ LEVEL_HEADINGS = {
     "possibly eligible": "🟡 POSSIBLY ELIGIBLE",
 }
 
+# Schemes are split by nature into two groups, entitlements first (these are the missed
+# benefits that matter most), then the voluntary enrollment schemes. Within each group the
+# likely/possibly tags are kept.
+CATEGORY_ORDER = ["entitlement", "enrollment"]
+CATEGORY_HEADINGS = {
+    "entitlement": "💡 BENEFITS THEY MAY BE ENTITLED TO",
+    "enrollment": "📝 SCHEMES TO ENROLL IN",
+}
+
+# "Schemes to enroll in" are the voluntary, premium/contribution-based ones the family opts
+# into (PMJJBY, PMSBY, APY). Everything else is an entitlement/benefit the family is owed
+# (PMAY, Ayushman Bharat, ration cards, pensions for the poor, scholarships, JSY/PMMVY,
+# Ujjwala, MGNREGA, etc.). Matched by name keyword so it works without a DB schema change.
+_ENROLLMENT_KEYWORDS = (
+    "pmjjby",
+    "jeevan jyoti",
+    "pmsby",
+    "suraksha bima",
+    "apy",
+    "atal pension",
+)
+
+
+def classify_category(scheme_name: str) -> str:
+    """Return "enrollment" for voluntary contribution-based schemes, else "entitlement"."""
+    name = (scheme_name or "").lower()
+    return "enrollment" if any(kw in name for kw in _ENROLLMENT_KEYWORDS) else "entitlement"
+
 
 def load_schemes() -> list[dict]:
     """Fetch all schemes from Supabase."""
@@ -59,11 +87,16 @@ def format_match_report(match_data: dict, schemes: list[dict]) -> str:
     by_name = {s.get("scheme_name"): s for s in schemes}
     matches = match_data.get("matches") or []
 
-    buckets: dict[str, list[dict]] = {level: [] for level in DISPLAY_LEVELS}
+    # Group by category (entitlement vs enrollment) first, then by likelihood within each.
+    groups: dict[str, dict[str, list[dict]]] = {
+        cat: {level: [] for level in DISPLAY_LEVELS} for cat in CATEGORY_ORDER
+    }
     for m in matches:
         level = (m.get("likelihood") or "").strip().lower()
-        if level in buckets:
-            buckets[level].append(m)
+        if level not in DISPLAY_LEVELS:
+            continue
+        category = classify_category(m.get("scheme_name"))
+        groups[category][level].append(m)
 
     lines = [
         "🧭 SCHEME SUGGESTIONS",
@@ -72,37 +105,42 @@ def format_match_report(match_data: dict, schemes: list[dict]) -> str:
     ]
 
     shown = 0
-    for level in DISPLAY_LEVELS:
-        items = buckets[level]
-        if not items:
+    for category in CATEGORY_ORDER:
+        if not any(groups[category][level] for level in DISPLAY_LEVELS):
             continue
         lines.append("")
-        lines.append(LEVEL_HEADINGS[level])
-        for m in items:
-            shown += 1
-            name = m.get("scheme_name", "Unknown scheme")
-            scheme = by_name.get(name, {})
-
+        lines.append(f"━━ {CATEGORY_HEADINGS[category]} ━━")
+        for level in DISPLAY_LEVELS:
+            items = groups[category][level]
+            if not items:
+                continue
             lines.append("")
-            lines.append(f"• {name}")
+            lines.append(LEVEL_HEADINGS[level])
+            for m in items:
+                shown += 1
+                name = m.get("scheme_name", "Unknown scheme")
+                scheme = by_name.get(name, {})
 
-            benefit = _one_line(scheme.get("benefits"))
-            if benefit:
-                lines.append(f"  Benefit: {benefit}")
+                lines.append("")
+                lines.append(f"• {name}")
 
-            reasoning = (m.get("reasoning") or "").strip()
-            if reasoning:
-                lines.append(f"  Why: {reasoning}")
+                benefit = _one_line(scheme.get("benefits"))
+                if benefit:
+                    lines.append(f"  Benefit: {benefit}")
 
-            missing = m.get("missing_info") or []
-            if missing:
-                lines.append(f"  To confirm, find out: {', '.join(map(str, missing))}")
+                reasoning = (m.get("reasoning") or "").strip()
+                if reasoning:
+                    lines.append(f"  Why: {reasoning}")
 
-            link = m.get("source_link") or scheme.get("source_link")
-            if link:
-                lines.append(f"  Source: {link}")
+                missing = m.get("missing_info") or []
+                if missing:
+                    lines.append(f"  To confirm, find out: {', '.join(map(str, missing))}")
 
-            lines.append("  → Verify before applying.")
+                link = m.get("source_link") or scheme.get("source_link")
+                if link:
+                    lines.append(f"  Source: {link}")
+
+                lines.append("  → Verify before applying.")
 
     if shown == 0:
         lines.append("")

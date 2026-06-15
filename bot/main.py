@@ -47,6 +47,10 @@ WHISPER_SERVER_URL = os.environ["WHISPER_SERVER_URL"]
 # Stop asking after this many follow-up rounds and proceed with whatever we have.
 MAX_FOLLOWUP_ROUNDS = 2
 
+# A recording whose transcript has fewer than this many words is treated as an accidental
+# or too-short note: we don't try to extract from it and ask the worker to record again.
+MIN_RECORDING_WORDS = 8
+
 # Meta key stashed inside partial_profile to count completed follow-up rounds. Stripped
 # before the profile is saved or shown. (Keeps the sessions schema to the requested columns.)
 _ROUNDS_KEY = "_followup_rounds"
@@ -290,6 +294,20 @@ async def _process_recording(
     try:
         transcript = await download_and_transcribe(update, context)
         logger.info("Transcript (chat %s): %s", chat_id, transcript)
+
+        # Guard against accidental / too-short recordings before spending an LLM call:
+        # keep the session awaiting a recording so the worker can simply re-send.
+        if len((transcript or "").split()) < MIN_RECORDING_WORDS:
+            logger.info("Transcript too short (chat %s) — asking for a re-record", chat_id)
+            await asyncio.to_thread(
+                db.update_session, chat_id, state=db.STATE_AWAITING_RECORDING
+            )
+            await update.message.reply_text(
+                "That recording seemed too short or unclear. Please record again "
+                "covering the checklist."
+            )
+            return
+
         llm_data = await extract_profile(prompts.build_initial_user_prompt(transcript))
         logger.info("QA pairs (chat %s): %s", chat_id, llm_data.get("qa_pairs"))
         profile = merge_profiles(base, llm_data.get("profile"))
@@ -354,7 +372,7 @@ def main() -> None:
     app.add_handler(CommandHandler("initiate", initiate))
     # Verification / generate / show buttons ("pf:*") vs. the scheme-report buttons.
     app.add_handler(CallbackQueryHandler(profile_ui.handle_callback, pattern=r"^pf:"))
-    app.add_handler(CallbackQueryHandler(report_ui.handle_callback, pattern=r"^(s:|back|full)"))
+    app.add_handler(CallbackQueryHandler(report_ui.handle_callback, pattern=r"^(s:|back|full|noop)"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_error_handler(on_error)
