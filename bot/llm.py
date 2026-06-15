@@ -20,8 +20,13 @@ logger = logging.getLogger(__name__)
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Cheap, reliable model with good JSON adherence. Override via OPENROUTER_MODEL in .env,
-# or just change this constant.
-LLM_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
+# or just change this default. Resolved at call time (not import time) so it still picks
+# up the value even if .env is loaded after this module is imported.
+DEFAULT_MODEL = "google/gemini-2.5-flash"
+
+
+def _model() -> str:
+    return os.getenv("OPENROUTER_MODEL") or DEFAULT_MODEL
 
 
 async def _chat(messages: list[dict]) -> str:
@@ -31,7 +36,7 @@ async def _chat(messages: list[dict]) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": LLM_MODEL,
+        "model": _model(),
         "messages": messages,
         "temperature": 0,
         "max_tokens": 8000,
