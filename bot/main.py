@@ -47,6 +47,10 @@ WHISPER_SERVER_URL = os.environ["WHISPER_SERVER_URL"]
 # Stop asking after this many follow-up rounds and proceed with whatever we have.
 MAX_FOLLOWUP_ROUNDS = 2
 
+# Hard cap on the scheme-matching LLM call (incl. its one retry) so the worker is never
+# left hanging on "Checking welfare schemes…".
+MATCHING_TIMEOUT = 75
+
 # Meta key stashed inside partial_profile to count completed follow-up rounds. Stripped
 # before the profile is saved or shown. (Keeps the sessions schema to the requested columns.)
 _ROUNDS_KEY = "_followup_rounds"
@@ -150,13 +154,29 @@ async def finalize(update: Update, chat_id: int, profile: dict) -> None:
         await update.message.reply_text("Checking welfare schemes for this family… 🧭")
         schemes = await asyncio.to_thread(matching.load_schemes)
         schemes = matching.select_schemes(clean, schemes)
-        match_data = await matching.match_schemes(clean, schemes)
-        logger.info("Scheme matches (chat %s): %s", chat_id, match_data)
+
+        logger.info("Matching %d schemes (chat %s)…", len(schemes), chat_id)
+        # Cap the LLM call (plus its one retry) so a slow/hung response can't freeze the flow.
+        match_data = await asyncio.wait_for(
+            matching.match_schemes(clean, schemes), timeout=MATCHING_TIMEOUT
+        )
+        logger.info(
+            "Scheme matches (chat %s): %d returned", chat_id, len(match_data.get("matches", []))
+        )
+
         plain_text = matching.format_match_report(match_data, schemes)
         family_name = clean.get("name") or "this family"
         text, markup = report_ui.build_report(chat_id, match_data, schemes, family_name, plain_text)
+
+        logger.info("Sending eligibility report (chat %s)", chat_id)
         await update.message.reply_text(
             text, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True
+        )
+    except asyncio.TimeoutError:
+        logger.error("Scheme matching timed out after %ss (chat %s)", MATCHING_TIMEOUT, chat_id)
+        await update.message.reply_text(
+            "Scheme matching is taking too long right now. The profile is saved — "
+            "please run it again shortly."
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Scheme matching failed: %s", exc, exc_info=True)
@@ -372,6 +392,11 @@ async def _process_followup(
 # Entry point
 # ---------------------------------------------------------------------------
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log any exception raised inside a handler so it never fails silently."""
+    logger.error("Unhandled handler error", exc_info=context.error)
+
+
 def main() -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = Application.builder().token(token).build()
@@ -381,6 +406,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(report_ui.handle_callback))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_error_handler(on_error)
 
     logger.info("Bot started — polling (Whisper: %s)", WHISPER_SERVER_URL)
     app.run_polling()

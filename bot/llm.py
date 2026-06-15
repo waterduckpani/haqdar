@@ -34,13 +34,19 @@ async def _chat(messages: list[dict]) -> str:
         "model": LLM_MODEL,
         "messages": messages,
         "temperature": 0,
+        "max_tokens": 8000,
         "response_format": {"type": "json_object"},
     }
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(OPENROUTER_URL, json=payload, headers=headers)
         response.raise_for_status()
     data = response.json()
-    return data["choices"][0]["message"]["content"]
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        logger.warning("Unexpected LLM response shape: %r", str(data)[:400])
+        content = None
+    return content or ""
 
 
 def _extract_json(text: str) -> dict:
@@ -78,6 +84,7 @@ async def call_json(system_prompt: str, user_prompt: str) -> dict:
     ]
 
     content = await _chat(messages)
+    logger.info("LLM response length: %d chars", len(content))
     parsed = _try_parse(content)
     if parsed is not None:
         return parsed
