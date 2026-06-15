@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -30,6 +31,7 @@ from telegram.ext import (
 import db
 import matching
 import prompts
+import report_ui
 from llm import extract_profile
 
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -136,22 +138,6 @@ def format_followups(questions: list[str], missing: list[str]) -> str:
 # State-machine steps
 # ---------------------------------------------------------------------------
 
-async def send_long(update: Update, text: str, limit: int = 4000) -> None:
-    """Send a possibly-long message as plain text, split on line breaks under Telegram's cap."""
-    chunks: list[str] = []
-    current = ""
-    for line in text.split("\n"):
-        if current and len(current) + len(line) + 1 > limit:
-            chunks.append(current)
-            current = line
-        else:
-            current = line if not current else f"{current}\n{line}"
-    if current:
-        chunks.append(current)
-    for chunk in chunks:
-        await update.message.reply_text(chunk)
-
-
 async def finalize(update: Update, chat_id: int, profile: dict) -> None:
     """Store the profile, show the summary, run scheme matching, then return to idle."""
     clean = {field: profile.get(field) for field in prompts.PROFILE_FIELDS}
@@ -166,7 +152,12 @@ async def finalize(update: Update, chat_id: int, profile: dict) -> None:
         schemes = matching.select_schemes(clean, schemes)
         match_data = await matching.match_schemes(clean, schemes)
         logger.info("Scheme matches (chat %s): %s", chat_id, match_data)
-        await send_long(update, matching.format_match_report(match_data, schemes))
+        plain_text = matching.format_match_report(match_data, schemes)
+        family_name = clean.get("name") or "this family"
+        text, markup = report_ui.build_report(chat_id, match_data, schemes, family_name, plain_text)
+        await update.message.reply_text(
+            text, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error("Scheme matching failed: %s", exc, exc_info=True)
         await update.message.reply_text(
@@ -387,6 +378,7 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("initiate", initiate))
+    app.add_handler(CallbackQueryHandler(report_ui.handle_callback))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
