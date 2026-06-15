@@ -1,0 +1,41 @@
+Haqdar — Source-Available License (All Rights Reserved)
+Copyright (c) 2026 Bharat Khanna. All rights reserved.
+
+This source code is made publicly visible for portfolio review, evaluation,
+reference, and educational reading ONLY. It is "source-available," not
+open source: viewing the code does not grant any license to use it.
+
+1. GRANT (what you MAY do)
+   You may view, read, and clone this repository solely to evaluate the
+   author's work (for example, while reviewing the author's portfolio) and
+   for personal, non-commercial study of the techniques demonstrated.
+
+2. RESTRICTIONS (what you MAY NOT do without prior written permission)
+   Except as expressly permitted in Section 1, you may NOT:
+   (a) copy, reproduce, or replicate this software or any substantial
+       portion of it, in source or compiled form;
+   (b) use this software, in whole or in part, in any product, service,
+       project, or system, whether commercial or non-commercial;
+   (c) modify, adapt, translate, or create derivative works from it;
+   (d) redistribute, publish, sublicense, sell, or otherwise make it
+       available to any third party;
+   (e) remove or alter this license, the copyright notice, or attribution.
+
+3. PERMISSIONS
+   For any use beyond Section 1 — including reuse of code, derivative works,
+   or commercial use — you must obtain prior written permission from the
+   copyright holder. Requests may be sent to: bharatkhanna117@gmail.com
+
+4. THIRD-PARTY COMPONENTS
+   This project depends on third-party libraries and services that are
+   licensed separately by their respective owners. Nothing in this license
+   alters your rights or obligations under those licenses.
+
+5. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE AUTHOR OR COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+   FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
