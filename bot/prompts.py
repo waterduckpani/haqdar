@@ -17,9 +17,9 @@ CHECKLIST_MESSAGE = (
     "2) monthly household income\n"
     "3) number of people in the family\n"
     "4) number of children and each child's age\n"
-    "5) who is the main earner in the family and what work do they do — name the "
-    "relation (e.g. husband, son, self) and the SPECIFIC work (e.g. carpenter, "
-    "potter, mason, daily-wage laborer), not just \"labour\"\n"
+    "5) who is the main earner and what work do they do? (the respondent can say "
+    "\"it's me, I do X\" or \"it's my husband/son, he does X\") — give the SPECIFIC "
+    "work (e.g. carpenter, potter, mason, daily-wage laborer), not just \"labour\"\n"
     "6) caste category (General/OBC/SC/ST)\n"
     "7) type of house (kutcha/pucca/homeless)\n"
     "8) do they own land\n"
@@ -43,10 +43,9 @@ PROFILE_FIELDS = [
     "monthly_income",
     "family_size",
     "children",
-    "occupation",
-    "occupation_detail",
-    "primary_earner_occupation",
+    "respondent_relation",
     "primary_earner_relation",
+    "primary_earner_occupation",
     "caste",
     "housing",
     "land_owned",
@@ -65,18 +64,19 @@ PROFILE_FIELDS = [
 # they are never asked of the family. gender and adult_male_earner_16_59 are
 # inferred when possible but never block completion.
 #
-# The newer fields (children, occupation_detail, pregnant_or_lactating,
-# has_electricity, has_lpg, has_bank_account) are deliberately NOT required:
-# making them hard-required would pester families they don't apply to (e.g.
-# asking a childless family for children repeatedly). They are captured from the
-# recording when stated and, crucially, are always visible and editable in the
-# new verification step, so a worker can fill any that matter for matching.
+# The newer fields (children, respondent_relation, primary_earner_relation,
+# pregnant_or_lactating, has_electricity, has_lpg, has_bank_account) are
+# deliberately NOT required: making them hard-required would pester families they
+# don't apply to (e.g. asking a childless family for children repeatedly). They
+# are captured from the recording when stated and, crucially, are always visible
+# and editable in the verification step, so a worker can fill any that matter for
+# matching. The single occupation field we DO require is the main earner's work.
 REQUIRED_FIELDS = [
     "name",
     "age",
     "monthly_income",
     "family_size",
-    "occupation",
+    "primary_earner_occupation",
     "caste",
     "housing",
     "land_owned",
@@ -94,10 +94,9 @@ FIELD_LABELS = {
     "monthly_income": "Monthly income (₹)",
     "family_size": "Family size",
     "children": "Children (ages)",
-    "occupation": "Occupation",
-    "occupation_detail": "Specific occupation/trade (of the main earner)",
-    "primary_earner_occupation": "Main earner's work",
+    "respondent_relation": "Respondent (who was interviewed)",
     "primary_earner_relation": "Main earner (relation to respondent)",
+    "primary_earner_occupation": "Main earner's work",
     "caste": "Caste category",
     "housing": "Type of house",
     "land_owned": "Owns land",
@@ -150,23 +149,30 @@ Every profile value you fill MUST be traceable to an answer in qa_pairs.
 - family_size: integer
 - children: array of integers — the age in years of each child under 18, e.g. [4, 9, 13].
   Use [] ONLY if the family clearly states they have no children under 18. Use null if not stated.
-- occupation: string (a short general description of the household's work)
-- occupation_detail: string — the SPECIFIC trade or job of the family's MAIN EARNER, in the
-  family's own words, e.g. "carpenter", "potter", "blacksmith", "cobbler", "mason",
-  "daily-wage laborer". This describes the main earner's work, NOT necessarily the
-  respondent's. Do NOT collapse a skilled or artisan trade into a generic word like "laborer"
-  or "worker": if a specific trade is stated, keep it here verbatim. null if no specific trade
-  is stated.
-- primary_earner_occupation: string — the work done by the family's MAIN EARNER (the person
-  whose income mainly supports the household). This is OFTEN NOT the respondent: the person
-  recording/answering may be the wife while the main earner is the husband, or a parent while
-  the earner is a son. Capture the earner's actual work here even when the respondent does
-  something else (or nothing). null if not stated.
-- primary_earner_relation: string — WHO the main earner is, given as their relationship to
-  the respondent in the respondent's own words, e.g. "self" (the respondent is the main
-  earner), "husband", "wife", "son", "daughter", "father", "brother". null if not stated.
+- respondent_relation: string — WHO is being interviewed. There is always exactly ONE adult
+  respondent (the family member present and answering the worker's questions). This is almost
+  always "self" — use "self" unless the transcript clearly indicates the answers are being
+  given on behalf of someone else. Default to "self" when in doubt.
+- primary_earner_relation: string — WHO the family's MAIN EARNER is (the person whose income
+  mainly supports the household), given as their relationship to the respondent in the
+  respondent's own words: "self" (the respondent is the main earner), "husband", "wife",
+  "son", "daughter", "father", "brother", etc. null if not stated.
+- primary_earner_occupation: string — the SPECIFIC work done by the family's MAIN EARNER, in
+  the family's own words, e.g. "carpenter", "potter", "blacksmith", "cobbler", "mason",
+  "daily-wage laborer". Do NOT collapse a skilled or artisan trade into a generic word like
+  "laborer" or "worker": if a specific trade is stated, keep it verbatim. null if not stated.
 - caste: "General" | "OBC" | "SC" | "ST"
-- housing: "kutcha" | "pucca" | "homeless" | "landless"
+- housing: "kutcha" | "pucca" | "homeless" | "landless". IMPORTANT — do NOT rely on the
+  literal words "kutcha"/"pucca": they are Hindi loanwords that the speech-to-text often
+  garbles. Infer the house type from the DESCRIPTION of what the home is made of:
+    * mud, clay, thatch, tin, bamboo, mitti, temporary, raw, unfinished materials  -> "kutcha"
+    * brick, cement, concrete, plastered, solid, permanent materials               -> "pucca"
+  Also accept and map common spelling variants of the words themselves:
+    * "kaccha", "kacha", "katcha", "kucha", "kutcha"            -> "kutcha"
+    * "pucca", "pukka", "pakka", "puca"                         -> "pucca"
+  Use "homeless" if they have no house, "landless" only if explicitly stated. If the recording
+  is muffled or the house material is genuinely unclear, leave housing null and raise a
+  plain-language follow-up (see followup_questions rules) — do NOT guess.
 - land_owned: boolean
 - ration_card: "none" | "APL" | "BPL" | "AAY" | "PHH"
 - disability: boolean (true if ANY family member has a disability)
@@ -182,6 +188,17 @@ Rules:
 - Fill a profile field ONLY when the family actually stated that information and it is
   traceable to a qa_pairs answer. If no answer covers a field, it MUST stay null (or [] for
   children only when "no children" is explicitly stated).
+- OCCUPATION BELONGS ONLY TO THE MAIN EARNER. There is exactly one occupation field,
+  primary_earner_occupation, and it describes the family's MAIN EARNER's work — nobody else's.
+    * If the respondent says "it's me, I do X" (they are the earner), set
+      primary_earner_relation="self" and primary_earner_occupation="X".
+    * If the respondent says "it's my husband/son/father who does X", set
+      primary_earner_relation to that relation and primary_earner_occupation="X". The
+      respondent keeps NO occupation of their own.
+    * NEVER attach an occupation to the respondent unless they state they are the earner.
+    * NEVER attach an occupation to a child, a minor, or any other family member, and NEVER
+      stamp the earner's occupation onto family_size members generally. The job is the
+      earner's alone.
 - NEVER guess, assume, infer-to-fill, or hallucinate a value just to occupy a slot. A null
   is always better than an invented value. (The single exception is adult_male_earner_16_59,
   which may be reasonably inferred from a stated occupation/answer, else null.)
@@ -189,12 +206,12 @@ Rules:
 - If income is stated as annual, convert it to a monthly figure.
 - Use null for anything not stated or genuinely unclear. Do NOT invent values.
 - "missing_fields": array of field names from "profile" that are null AND required.
-  Required fields are: name, age, monthly_income, family_size, occupation, caste, housing,
-  land_owned, ration_card, disability. (state and area are collected separately by the
-  worker — do NOT ask about them in followup_questions.) The additional fields (children,
-  occupation_detail, primary_earner_occupation, primary_earner_relation,
-  pregnant_or_lactating, has_electricity, has_lpg, has_bank_account) are NOT required, so do
-  not list them in missing_fields; still capture them whenever stated.
+  Required fields are: name, age, monthly_income, family_size, primary_earner_occupation,
+  caste, housing, land_owned, ration_card, disability. (state and area are collected
+  separately by the worker — do NOT ask about them in followup_questions.) The additional
+  fields (children, respondent_relation, primary_earner_relation, pregnant_or_lactating,
+  has_electricity, has_lpg, has_bank_account) are NOT required, so do not list them in
+  missing_fields; still capture them whenever stated.
 - "followup_questions": array of at most 3 short plain-English questions targeting the most
   important missing_fields. Use an empty array if nothing required is missing.
   PHRASING — the questions are read by the FIELD WORKER and are ABOUT a specific family
@@ -202,6 +219,14 @@ Rules:
   earner", "the respondent", "the child", "the family" — and NEVER use second-person "your".
   Write "What is the main earner's monthly income?" or "What is the respondent's gender?",
   NOT "What is your father's income?" or "Confirm your gender".
+  HOUSE TYPE — if housing is null/unclear (e.g. the recording was muffled), the follow-up
+  MUST avoid the jargon words "kutcha"/"pucca" entirely and ask plainly, exactly like:
+  "What is the family's house made of? Mud, thatch or temporary materials, OR brick, cement
+  or concrete?" (the worker's answer is then mapped to kutcha/pucca using the housing rules
+  above).
+  EARNER — if primary_earner_occupation is missing, ask who the main earner is and what
+  specific work they do, e.g. "Who is the family's main earner and what specific work do they
+  do?" — never attribute work to the respondent in the question.
 """
 
 STRICT_JSON_REMINDER = (
@@ -235,24 +260,24 @@ def build_initial_user_prompt(transcript: str) -> str:
           ],
           "profile": {
             "name": "Sita", "age": 38, "gender": "female", "state": null, "area": null,
-            "monthly_income": 8000, "family_size": 5, "children": null, "occupation": null,
-            "occupation_detail": null, "primary_earner_occupation": null,
-            "primary_earner_relation": null, "caste": null, "housing": null, "land_owned": null,
-            "ration_card": null, "disability": null, "adult_male_earner_16_59": null,
-            "pregnant_or_lactating": null, "has_electricity": null, "has_lpg": null,
-            "has_bank_account": null
+            "monthly_income": 8000, "family_size": 5, "children": null,
+            "respondent_relation": "self", "primary_earner_relation": null,
+            "primary_earner_occupation": null, "caste": null, "housing": null,
+            "land_owned": null, "ration_card": null, "disability": null,
+            "adult_male_earner_16_59": null, "pregnant_or_lactating": null,
+            "has_electricity": null, "has_lpg": null, "has_bank_account": null
           },
-          "missing_fields": ["occupation", "caste", "housing", "land_owned",
+          "missing_fields": ["primary_earner_occupation", "caste", "housing", "land_owned",
                              "ration_card", "disability"],
           "followup_questions": [
-            "What work does the family do?",
-            "What is their caste category?",
-            "What type of house do they live in, and do they own land?"
+            "Who is the family's main earner and what specific work do they do?",
+            "What is the family's caste category?",
+            "What is the family's house made of, and do they own land?"
           ]
         }
 
-    Note how ``occupation``/``caste``/etc. stay null because the family never
-    answered them — they are not guessed.
+    Note how ``primary_earner_occupation``/``caste``/etc. stay null because the
+    family never answered them — they are not guessed.
     """
     return (
         "TRANSCRIPT OF THE VOICE NOTE (worker + family, translated to English):\n"
@@ -314,31 +339,33 @@ LIKELIHOOD DEFINITIONS (apply strictly):
   "not eligible" rather than hedging to "possibly".
 
 HOW TO COMPARE:
-- Go field by field: income, age, gender, caste, area (rural/urban), occupation +
-  occupation_detail, primary_earner_occupation + primary_earner_relation, housing, land
-  ownership, ration_card, disability, children ages, pregnant_or_lactating, has_electricity,
-  has_lpg, has_bank_account, and any other_flags.
+- Go field by field: income, age, gender, caste, area (rural/urban),
+  primary_earner_occupation + primary_earner_relation, housing, land ownership, ration_card,
+  disability, children ages, pregnant_or_lactating, has_electricity, has_lpg,
+  has_bank_account, and any other_flags.
 
 WHO HOLDS THE OCCUPATION (read carefully):
-- The profile separates the RESPONDENT (the person interviewed) from the family's MAIN
-  EARNER. primary_earner_relation says who the earner is relative to the respondent (e.g.
-  "self", "husband", "son"); primary_earner_occupation and occupation_detail describe the
-  EARNER's work, which is often NOT the respondent's.
+- The profile separates the RESPONDENT (the one adult interviewed, given as
+  respondent_relation, almost always "self") from the family's MAIN EARNER.
+  primary_earner_relation says who the earner is relative to the respondent (e.g. "self",
+  "husband", "son"); primary_earner_occupation is the EARNER's work, which is often NOT the
+  respondent's. The occupation belongs to the earner ONLY — never assume the respondent or a
+  child does that job.
 - For occupation-based schemes — PM Vishwakarma, PM SVANidhi, PM-SYM, PM Mudra, Stand-Up
   India, APY (where eligibility depends on the worker), and any other scheme that turns on
   what work a person does — judge eligibility against the MAIN EARNER's work
-  (primary_earner_occupation / occupation_detail), NOT the respondent's. The earner is the
-  household member who would actually enrol.
+  (primary_earner_occupation), NOT the respondent's. The earner is the household member who
+  would actually enrol.
 - Word the "reasoning" so it NAMES who in the household the scheme applies to, using
   primary_earner_relation. If it is "father" and the father is an electrician, write e.g.
   "the father, an electrician, is an unorganised worker, so PM-SYM applies to him" — never a
   bare "the applicant is an electrician." If primary_earner_relation is "husband" and the
-  husband is a carpenter, write "the husband is a carpenter, so PM Vishwakarma applies to
-  him" — do NOT imply the respondent holds that job. If primary_earner_relation is "self",
-  the respondent is the earner and you may speak in the normal way. If
-  primary_earner_relation is null/unknown but the work is known, refer to the earner as "the
-  household's main earner" (e.g. "the household's main earner is a mason, so PM Vishwakarma
-  applies to that earner") — never attribute the work to "the applicant" by default.
+  husband is a carpenter, write "the husband, a carpenter, so PM Vishwakarma applies to him"
+  — do NOT imply the respondent holds that job. If primary_earner_relation is "self", the
+  respondent is the earner and you may speak in the normal way. If primary_earner_relation is
+  null/unknown but the work is known, refer to the earner as "the household's main earner"
+  (e.g. "the household's main earner is a mason, so PM Vishwakarma applies to that earner") —
+  never attribute the work to "the applicant" by default.
 - INCOME: the profile's monthly_income is MONTHLY. A scheme's income_max_annual is ANNUAL.
   Multiply the profile income by 12 before comparing. Income ceilings are INCLUSIVE: annual
   income <= the cap is WITHIN the limit (income exactly at the cap qualifies); only income
@@ -354,17 +381,17 @@ HARD EXCLUSIONS — apply these as "not eligible" even if other fields look fine
   "homeless", or "landless", and exclude has_electricity == false.
 - Artisan/skilled-trade schemes (e.g. PM Vishwakarma): require ONE of the recognised
   traditional artisan trades (carpenter, blacksmith, potter, cobbler, mason, tailor,
-  goldsmith, boat-maker, etc.). Judge from the MAIN EARNER's work (primary_earner_occupation
-  / occupation_detail) and attribute it to that earner in the reasoning. A generic "laborer" /
-  "daily wage worker" with no specific trade is NOT eligible.
+  goldsmith, boat-maker, etc.). Judge from the MAIN EARNER's work
+  (primary_earner_occupation) and attribute it to that earner in the reasoning. A generic
+  "laborer" / "daily wage worker" with no specific trade is NOT eligible.
 - Scholarship schemes (e.g. NMMSS and other student scholarships): require a child in the
   scheme's class/age range. Check the children ages. If there are no children, or none fall
   in range, mark "not eligible". If children is null, it is "possibly eligible" (missing_info:
   children).
 - Business-loan schemes (e.g. Mudra, Stand-Up India): require an actual or clearly intended
-  business/enterprise. Judge from the MAIN EARNER's work (primary_earner_occupation /
-  occupation_detail) and attribute it to that earner in the reasoning. If nothing in the
-  profile indicates a business or self-employment, mark "not eligible".
+  business/enterprise. Judge from the MAIN EARNER's work (primary_earner_occupation) and
+  attribute it to that earner in the reasoning. If nothing in the profile indicates a
+  business or self-employment, mark "not eligible".
 
 AFFORDABILITY — capital-heavy schemes:
 - Some schemes require a large UPFRONT cost the family must pay even after the subsidy —

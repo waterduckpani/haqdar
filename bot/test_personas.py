@@ -30,8 +30,8 @@ from llm import extract_profile  # noqa: E402
 BHARAT = {
     "name": "Bharat", "age": 38, "gender": "male", "state": "Uttar Pradesh", "area": "rural",
     "monthly_income": 9000, "family_size": 5, "children": [7, 11],
-    "occupation": "electrician", "occupation_detail": "electrician",
-    "primary_earner_occupation": "electrician", "primary_earner_relation": "self",
+    "respondent_relation": "self", "primary_earner_relation": "self",
+    "primary_earner_occupation": "electrician",
     "caste": "OBC", "housing": "pucca", "land_owned": True, "ration_card": "BPL",
     "disability": False, "adult_male_earner_16_59": True, "pregnant_or_lactating": False,
     "has_electricity": True, "has_lpg": False, "has_bank_account": True,
@@ -40,8 +40,8 @@ BHARAT = {
 MEENA = {
     "name": "Meena", "age": 30, "gender": "female", "state": "Bihar", "area": "rural",
     "monthly_income": 7000, "family_size": 6, "children": [2, 6, 10],
-    "occupation": "household work", "occupation_detail": "carpenter",
-    "primary_earner_occupation": "carpenter", "primary_earner_relation": "husband",
+    "respondent_relation": "self", "primary_earner_relation": "husband",
+    "primary_earner_occupation": "carpenter",
     "caste": "SC", "housing": "kutcha", "land_owned": False, "ration_card": "AAY",
     "disability": False, "adult_male_earner_16_59": True, "pregnant_or_lactating": True,
     "has_electricity": False, "has_lpg": False, "has_bank_account": False,
