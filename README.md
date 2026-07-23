@@ -2,7 +2,7 @@
 
 # 🧭 Haqdar
 
-**An AI field-intake assistant that helps frontline workers match poor families to the Indian government welfare schemes they're entitled to — from a single voice note.**
+**An AI field-intake assistant that helps frontline workers match families in need to the Indian government welfare schemes they're entitled to — from a single voice note.**
 
 *Haqdar (हक़दार) — Hindi/Urdu for "the rightful claimant; one who is entitled."*
 
