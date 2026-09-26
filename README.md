@@ -1,47 +1,78 @@
+<p align="center">
+  <img src=".github/readme/banner.png" alt="Haqdar: from one voice note to the welfare schemes a family is entitled to" width="100%">
+</p>
+
 <div align="center">
 
-# 🧭 Haqdar
+![platform: Telegram](https://img.shields.io/badge/platform-Telegram-0B3C45?style=flat-square)
+![speech: Whisper large-v3](https://img.shields.io/badge/speech-Whisper%20large--v3-0B3C45?style=flat-square)
+![languages: any Indian language](https://img.shields.io/badge/languages-any%20Indian%20language-0B3C45?style=flat-square)
+![python: 3.10+](https://img.shields.io/badge/python-3.10%2B-0B3C45?style=flat-square)
+[![license: source-available](https://img.shields.io/badge/license-source--available-0B3C45?style=flat-square)](LICENSE)
 
-**An AI field-intake assistant that helps frontline workers match families in need to the Indian government welfare schemes they're entitled to — from a single voice note.**
+**An AI field-intake assistant that matches families to the Indian government welfare schemes they're entitled to, from a single voice note.**<br>
+<sub>Telegram bot · Python · Whisper (MLX) · Supabase</sub>
 
-*Haqdar (हक़दार) — Hindi/Urdu for "the rightful claimant; one who is entitled."*
+*Haqdar (हक़दार): Hindi/Urdu for "the rightful claimant; one who is entitled."*
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
-[![Whisper](https://img.shields.io/badge/Whisper-large--v3%20(MLX)-FF6F00)](https://github.com/ml-explore/mlx-examples/tree/main/whisper)
-[![Supabase](https://img.shields.io/badge/Supabase-Postgres-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com/)
-[![License: Source-Available](https://img.shields.io/badge/License-Source--Available-red)](LICENSE)
+[Overview](#overview) · [Highlights](#highlights) · [How it works](#how-it-works) · [Getting started](#getting-started) · [Status](#status-and-roadmap)
 
 </div>
 
----
+<p align="center">
+  <img src=".github/readme/flow.png" width="100%" alt="The four steps of an intake in Telegram: record, verify, see matches, see why">
+  <br>
+  <sub>An example intake for one of the test families, recreated from the bot's own messages.</sub>
+</p>
 
-## The problem
+> [!IMPORTANT]
+> **Source-available, not open source.** This repository is published so it can be read and evaluated as part of my portfolio. See the [License](#license); the code is here to read, not to redeploy.
 
-India runs hundreds of welfare schemes, but the families who qualify are often the least able to navigate them — eligibility rules are scattered, in English, and buried in PDFs. A field worker sitting with a family has minutes, not hours, to figure out what they can claim.
+## Overview
 
-**Haqdar collapses that into one voice note.** A worker records the family's answers to a fixed checklist in any Indian language; Haqdar transcribes it, builds a structured profile, asks for anything missing, and returns a tappable, plain-language report of which schemes the family is *likely* and *possibly* eligible for — with the reasoning and source links to verify before applying.
+India runs hundreds of welfare schemes, but the families who qualify are often the least able to navigate them. Eligibility rules are scattered, in English and buried in PDFs, and a field worker sitting with a family has minutes, not hours.
 
----
+**Haqdar collapses that into one voice note.** A worker records the family's answers to a fixed checklist in any Indian language. Haqdar transcribes it, builds a structured profile, asks for anything missing, and returns a tappable, plain-language report of which schemes the family is *likely* and *possibly* eligible for, with the reasoning and source links to verify before applying.
+
+## Highlights
+
+| Feature | What it does |
+|---|---|
+| **Voice-first intake** | Workers speak instead of typing forms: one voice note per family. |
+| **Any Indian language** | Whisper `large-v3` transcribes and translates to English, on-device with MLX on Apple Silicon. |
+| **Structured profiles** | An LLM turns free-form speech into a typed family profile: income, caste category, housing, land, ration card, disability and more. |
+| **Verify before matching** | The worker reviews the profile on an inline keyboard and corrects any field in place before a single matching call runs. |
+| **Strict matching with reasons** | Every scheme starts as *not eligible*, with hard exclusions, so results aren't padded into "possibly". Each match says why and what's left to confirm. |
+| **Interactive report** | Overview → per-scheme detail → full text, all editing one Telegram message in place. |
+
+<details>
+<summary><strong>Everything else it does</strong></summary>
+
+- **Smart follow-ups**: if required fields are missing, the bot asks targeted questions (typed or by voice) for up to two rounds, then proceeds with what it has.
+- **Hard exclusions**: rooftop solar needs a roof and power, artisan schemes need a real trade, scholarships need a child in range, business loans need a business.
+- **Entitlements vs. enrolment**: benefits the family is owed are listed apart from voluntary, contribution-based schemes to enrol in.
+- **Resilient by design**: defensive JSON parsing with retry, hard timeouts on the matching call, and graceful fallbacks so a worker is never left hanging.
+- **Survives restarts**: state, the partial profile, in-progress edits and the matching result all live in the Supabase session row.
+
+</details>
 
 ## How it works
 
-```
+```text
    Field worker (Telegram)
             │  voice note (Hindi / regional language)
             ▼
    ┌─────────────────────┐      audio       ┌──────────────────────────┐
-   │   Telegram Bot      │ ───────────────▶ │   Whisper Server          │
-   │  (python-telegram-  │                   │  FastAPI + MLX Whisper    │
-   │   bot, state mach.) │ ◀─────────────── │  large-v3, translate→EN   │
-   └─────────┬───────────┘   English text    └──────────────────────────┘
-             │
+   │   Telegram Bot      │ ───────────────▶ │   Whisper Server         │
+   │  (python-telegram-  │                  │  FastAPI + MLX Whisper   │
+   │   bot, state mach.) │ ◀─────────────── │  large-v3, translate→EN  │
+   └─────────┬───────────┘   English text   └──────────────────────────┘
              │  transcript
              ▼
    ┌─────────────────────┐   structured     ┌──────────────────────────┐
-   │   LLM Extraction    │   JSON profile   │   OpenRouter LLM          │
-   │   + Scheme Matching │ ◀──────────────▶ │   (Gemini 2.5 Flash)      │
-   └─────────┬───────────┘                   └──────────────────────────┘
+   │   LLM Extraction    │   JSON profile   │   OpenRouter LLM         │
+   │   + Scheme Matching │ ◀──────────────▶ │   (Gemini 2.5 Flash)     │
+   └─────────┬───────────┘                  └──────────────────────────┘
              │  profile + matches
              ▼
    ┌─────────────────────┐
@@ -49,57 +80,102 @@ India runs hundreds of welfare schemes, but the families who qualify are often t
    └─────────────────────┘
              │
              ▼
-   Interactive eligibility report (inline-keyboard overview ▸ per-scheme detail)
+   Interactive eligibility report (overview ▸ per-scheme detail)
 ```
 
 Each worker moves through a persisted state machine:
 
-```
+```text
 idle → awaiting_state → awaiting_area → awaiting_recording → processing
      → awaiting_followup → verifying ⇄ editing_field → report_ready → idle
 ```
 
-Matching is **never** run automatically: once the required fields are captured, the worker is shown an editable verification card and matching only runs when they tap **Generate eligibility report**. State, the partial profile, the in-progress edits, and the matching result all live in the Supabase session row, so an intake survives a bot restart mid-conversation.
-
----
-
-## Features
-
-- 🎙️ **Voice-first intake** — workers speak instead of typing forms; one voice note per family.
-- 🌏 **Any Indian language → English** — Whisper `large-v3` transcribes *and translates* on-device.
-- ⚡ **On-device transcription** — runs locally via **MLX** on Apple Silicon (no audio leaves your machine for STT); reachable over Tailscale if the model host is separate.
-- 🧠 **Structured profile extraction** — an LLM turns free-form speech into a typed family profile (income, caste category, housing, land, ration card, disability, …).
-- 🔁 **Smart follow-ups** — if required fields are missing, the bot asks targeted questions (typed or by voice) for up to two rounds, then proceeds with what it has.
-- 📝 **Verify-before-match** — the worker reviews the captured profile on an inline keyboard, taps any field to correct it (edited in place), and only then triggers matching — no wasted LLM calls on a wrong profile.
-- ✅ **Strict scheme matching with reasoning** — the matcher defaults every scheme to *not eligible* and applies hard exclusions (rooftop-solar needs a roof + power, artisan schemes need a real trade, scholarships need a child in range, business loans need a business), so results aren't swept into "possibly" to be safe. Surviving schemes are grouped into *Likely* / *Possibly* with a "why," what's left to confirm, and a source link.
-- 📱 **Interactive report** — a tappable Telegram inline-keyboard: overview → per-scheme detail → full text, all editing one message in place.
-- 🛡️ **Resilient by design** — defensive JSON parsing with retry, hard timeouts on the matching call, and graceful fallbacks so a worker is never left hanging.
-
----
+- **Matching never runs automatically.** It runs only when the worker taps **Generate eligibility report** on the verified profile.
+- **Audio never leaves the machine for speech-to-text.** The Whisper host can be separate and reached over Tailscale.
 
 ## Tech stack
 
-| Layer | Technology |
-|-------|-----------|
-| Messaging / UI | Telegram Bot API (`python-telegram-bot` 21) |
-| Speech-to-text | OpenAI Whisper `large-v3` via **MLX** (Apple Silicon), served with FastAPI + Uvicorn |
-| LLM | OpenRouter (default: `google/gemini-2.5-flash`) for extraction & matching |
-| Data | Supabase (Postgres) — sessions, profiles, schemes |
-| Networking | Tailscale (optional, for a remote Whisper host) |
-| Language | Python 3.10+ (async throughout) |
+| Layer | Tools |
+|---|---|
+| **Messaging** | ![Telegram](https://img.shields.io/badge/Telegram%20Bot%20API-26A5E4?style=flat-square&logo=telegram&logoColor=white) ![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot%2021-1f2328?style=flat-square) |
+| **Speech** | ![Whisper](https://img.shields.io/badge/Whisper%20large--v3-FF6F00?style=flat-square) ![MLX](https://img.shields.io/badge/MLX-000000?style=flat-square&logo=apple&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) |
+| **AI & data** | ![OpenRouter](https://img.shields.io/badge/OpenRouter-6467F2?style=flat-square) ![Gemini 2.5 Flash](https://img.shields.io/badge/Gemini%202.5%20Flash-8E75B2?style=flat-square&logo=googlegemini&logoColor=white) ![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=flat-square&logo=supabase&logoColor=white) |
+| **Runtime** | ![Python](https://img.shields.io/badge/Python%203.10%2B-3776AB?style=flat-square&logo=python&logoColor=white) ![Tailscale](https://img.shields.io/badge/Tailscale%20(optional)-242424?style=flat-square&logo=tailscale&logoColor=white) |
 
----
+## Getting started
 
-## Project structure
+**Requirements**
 
+- Python 3.10+, and an Apple Silicon Mac for the Whisper server
+- A Telegram bot token, an OpenRouter key and a Supabase project
+
+### 1. Database
+
+Create a Supabase project and run [`bot/schema.sql`](bot/schema.sql) in the SQL editor to create the `sessions` and `profiles` tables. Populate a `schemes` table with the welfare schemes to match against.
+
+### 2. Whisper server
+
+```bash
+cd whisper_server
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn server:app --host 0.0.0.0 --port 8000   # the MLX model (~3 GB) downloads on first run
 ```
+
+Check it with `curl http://localhost:8000/health`, which returns `{"status":"ok","model_loaded":true}`.
+
+### 3. Bot
+
+```bash
+cd bot
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example ../.env   # then fill in the values
+python main.py
+```
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+All configuration is via `.env` (see [`.env.example`](.env.example)):
+
+| Variable | Description |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) |
+| `WHISPER_SERVER_URL` | URL of the Whisper server (e.g. `http://localhost:8000` or a Tailscale IP) |
+| `OPENROUTER_API_KEY` | OpenRouter API key for extraction and matching |
+| `OPENROUTER_MODEL` | Optional override of the default model (`google/gemini-2.5-flash`) |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_KEY` | Supabase service-role or anon key |
+
+</details>
+
+<details>
+<summary><strong>Using the bot</strong></summary>
+
+| Worker action | Bot response |
+|---|---|
+| `/start` | Welcome and instructions |
+| `initiate` / `/initiate` | Begins an intake: asks for the state, then rural or urban |
+| Send a voice note | Transcribes, extracts the profile, asks follow-ups or shows the verify card |
+| Reply to a follow-up | Merges the answer and continues |
+| Tap a field on the verify card | Asks for the correct value and updates the profile in place |
+| Tap *Generate eligibility report* | Runs scheme matching and parks the result |
+| Tap *Show eligibility report* | Opens the interactive, per-scheme report |
+
+</details>
+
+<details>
+<summary><strong>Project structure</strong></summary>
+
+```text
 haqdar/
-├── bot/                    # Telegram bot — runs the intake state machine
+├── bot/                    # Telegram bot: runs the intake state machine
 │   ├── main.py             #   handlers + state machine entry point
 │   ├── llm.py              #   OpenRouter calls, defensive JSON parsing + retry
 │   ├── prompts.py          #   profile schema, checklist, all LLM prompts
 │   ├── matching.py         #   scheme screening + worker-facing report text
-│   ├── profile_ui.py       #   editable verify-before-match card (inline keyboard)
+│   ├── profile_ui.py       #   editable verify-before-match card
 │   ├── report_ui.py        #   interactive inline-keyboard report
 │   ├── db.py               #   Supabase access (sessions / profiles / schemes)
 │   └── schema.sql          #   Postgres schema
@@ -109,94 +185,29 @@ haqdar/
 └── LICENSE                 # source-available license
 ```
 
----
+</details>
 
-## Getting started
+## Status and roadmap
 
-> [!NOTE]
-> This repository is published as a **portfolio / source-available** project. See the [License](#license) section — the code is here to read, not to redeploy.
+A working prototype, tested end to end against live schemes with test families.
 
-### 1. Database (Supabase)
-
-Create a Supabase project and run [`bot/schema.sql`](bot/schema.sql) in the SQL editor to create the `sessions` and `profiles` tables. Populate a `schemes` table with the welfare schemes you want to match against.
-
-### 2. Whisper server
-
-```bash
-cd whisper_server
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Starts FastAPI; the MLX model (~3 GB) downloads and caches on first run.
-uvicorn server:app --host 0.0.0.0 --port 8000
-```
-
-Health check:
-
-```bash
-curl http://localhost:8000/health
-# {"status":"ok","model_loaded":true}
-```
-
-### 3. Bot
-
-```bash
-cd bot
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-cp ../.env.example ../.env   # then fill in the values below
-python main.py
-```
-
-### Configuration
-
-All configuration is via `.env` (see [`.env.example`](.env.example)):
-
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) |
-| `WHISPER_SERVER_URL` | URL of the Whisper server (e.g. `http://localhost:8000` or a Tailscale IP) |
-| `OPENROUTER_API_KEY` | OpenRouter API key for the extraction & matching LLM |
-| `OPENROUTER_MODEL` | *(optional)* override the default model (`google/gemini-2.5-flash`) |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_KEY` | Supabase service-role or anon key |
-
----
-
-## Usage
-
-| Worker action | Bot response |
-|---------------|--------------|
-| `/start` | Welcome and instructions |
-| `initiate` / `/initiate` | Begins an intake — asks for state, then rural/urban |
-| Send a voice note | Transcribes, extracts the profile, asks follow-ups or shows the verify card |
-| Reply to a follow-up | Merges the answer and continues |
-| Tap a field on the verify card | Prompts for the correct value; updates the profile in place |
-| Tap *Generate eligibility report* | Runs scheme matching and parks the result |
-| Tap *Show eligibility report* | Reveals the interactive, tappable per-scheme report |
-
----
-
-## Roadmap
-
-- [ ] Real candidate pre-filter before the matching LLM call (by caste / area / income) to cut cost on large scheme lists
-- [ ] Persist the eligibility report state (currently in-memory; lost on restart)
+- [x] Voice intake in any Indian language
+- [x] Verify-before-match profile card
+- [x] Strict matching with reasoning and source links
+- [x] Interactive Telegram report
+- [ ] Candidate pre-filter before the matching call (by caste, area and income) to cut cost on large scheme lists
+- [ ] Persist the report state (currently in memory; lost on restart)
 - [ ] Multi-worker analytics dashboard over the `profiles` history
-- [ ] Document upload (Aadhaar / ration card) for higher-confidence matching
-
----
+- [ ] Document upload (Aadhaar, ration card) for higher-confidence matching
 
 ## License
 
-This project is **source-available, not open source**. It is published so it can be read and evaluated as part of the author's portfolio. You may view and study the code, but copying, modifying, redistributing, or using it in any product or project is **not permitted** without prior written permission. See [LICENSE](LICENSE) for the full terms.
+**Source-available, not open source.** You may view and study the code, but copying, modifying, redistributing or using it in any product or project is not permitted without prior written permission. See [LICENSE](LICENSE) for the full terms.
 
-For permission requests, reach out at **bharatkhanna117@gmail.com**.
+For permission requests: **bharatkhanna117@gmail.com**
 
 ---
 
 <div align="center">
-
-Built by **Bharat Khanna** · [@waterduckpani](https://github.com/waterduckpani)
-
+  <sub>Built by <a href="https://github.com/waterduckpani">Bharat Khanna</a> · <a href="https://github.com/waterduckpani?tab=repositories">More projects</a></sub>
 </div>
